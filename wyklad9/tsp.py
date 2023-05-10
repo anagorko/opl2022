@@ -5,9 +5,79 @@ from numpy.random import seed as numpy_seed
 from scipy.spatial import distance
 import networkx
 import matplotlib.pyplot as plt
-from networkx.drawing.nx_pydot import graphviz_layout
+# from networkx.drawing.nx_pydot import graphviz_layout
 
 from sage.all import scatter_plot, circle, text, InteractiveLPProblemStandardForm, matrix, vector, RR, QQ, arrow, show
+
+
+import networkx as nx
+import random
+
+    
+def hierarchy_pos(G, root=None, width=1., vert_gap = 0.2, vert_loc = 0, xcenter = 0.5):
+
+    '''
+    From Joel's answer at https://stackoverflow.com/a/29597209/2966723.  
+    Licensed under Creative Commons Attribution-Share Alike 
+    
+    If the graph is a tree this will return the positions to plot this in a 
+    hierarchical layout.
+    
+    G: the graph (must be a tree)
+    
+    root: the root node of current branch 
+    - if the tree is directed and this is not given, 
+      the root will be found and used
+    - if the tree is directed and this is given, then 
+      the positions will be just for the descendants of this node.
+    - if the tree is undirected and not given, 
+      then a random choice will be used.
+    
+    width: horizontal space allocated for this branch - avoids overlap with other branches
+    
+    vert_gap: gap between levels of hierarchy
+    
+    vert_loc: vertical location of root
+    
+    xcenter: horizontal location of root
+    '''
+    if not nx.is_tree(G):
+        raise TypeError('cannot use hierarchy_pos on a graph that is not a tree')
+
+    if root is None:
+        if isinstance(G, nx.DiGraph):
+            root = next(iter(nx.topological_sort(G)))  #allows back compatibility with nx version 1.11
+        else:
+            root = random.choice(list(G.nodes))
+
+    def _hierarchy_pos(G, root, width=1., vert_gap = 0.2, vert_loc = 0, xcenter = 0.5, pos = None, parent = None):
+        '''
+        see hierarchy_pos docstring for most arguments
+
+        pos: a dict saying where all nodes go if they have been assigned
+        parent: parent of this branch. - only affects it if non-directed
+
+        '''
+    
+        if pos is None:
+            pos = {root:(xcenter,vert_loc)}
+        else:
+            pos[root] = (xcenter, vert_loc)
+        children = list(G.neighbors(root))
+        if not isinstance(G, nx.DiGraph) and parent is not None:
+            children.remove(parent)  
+        if len(children)!=0:
+            dx = width/len(children) 
+            nextx = xcenter - width/2 - dx/2
+            for child in children:
+                nextx += dx
+                pos = _hierarchy_pos(G,child, width = dx, vert_gap = vert_gap, 
+                                    vert_loc = vert_loc-vert_gap, xcenter=nextx,
+                                    pos=pos, parent = root)
+        return pos
+
+            
+    return _hierarchy_pos(G, root, width, vert_gap, vert_loc, xcenter)
 
 
 epsilon = 10**-6
@@ -252,13 +322,15 @@ class Tree:
         P = coords.linear_problem()
         self.G = networkx.DiGraph()
         self.G.add_node(0)
-        self.G.nodes[0]['label'] = f'0: {problem_description(P, False)}'
+        self.G.nodes[0]['label'] = f'0 -> {problem_description(P, False)}'
         self.G.nodes[0]['problem'] = P
 
     def plot(self):
         plt.figure(figsize=(20,10))
-        pos=graphviz_layout(self.G, prog='dot')
-        networkx.draw_networkx(self.G, labels=networkx.get_node_attributes(self.G, 'label'), pos=pos, node_size=500, node_color='#eeeeee', edge_labels=networkx.get_edge_attributes(self.G, 'label'))
+        # pos=graphviz_layout(self.G, prog='twopi')
+        # pos = networkx.kamada_kawai_layout(self.G)
+        pos = hierarchy_pos(self.G.reverse(), 0)
+        networkx.draw_networkx(self.G, labels=networkx.get_node_attributes(self.G, 'label'), pos=pos, node_size=500, node_color='#eeeeee')
         networkx.draw_networkx_edge_labels(self.G, pos=pos, edge_labels=networkx.get_edge_attributes(self.G, 'label'))
         plt.show()
 
@@ -269,7 +341,7 @@ class Tree:
         P = self.G.nodes[v]['problem']
         Pn = remove_subtour(P, tour)
         Pn = remove_subtour(Pn, list(reversed(tour)))
-        self.G.nodes[n]['label'] = f'{n}: {problem_description(Pn, False)}'
+        self.G.nodes[n]['label'] = f'{n} -> {problem_description(Pn, False)}'
         self.G.nodes[n]['problem'] = Pn
 
         self.G.add_edge(n, v)
@@ -290,9 +362,9 @@ class Tree:
 
         P0, P1 = branch_on(self.G.nodes[v]['problem'], src, dst)
 
-        self.G.nodes[n0]['label'] = f'{n0}: {problem_description(P0, False)}'
+        self.G.nodes[n0]['label'] = f'{n0} -> {problem_description(P0, False)}'
         self.G.nodes[n0]['problem'] = P0
-        self.G.nodes[n1]['label'] = f'{n1}: {problem_description(P1, False)}'
+        self.G.nodes[n1]['label'] = f'{n1} -> {problem_description(P1, False)}'
         self.G.nodes[n1]['problem'] = P1
 
         self.G.add_edge(n0, v)
@@ -347,7 +419,7 @@ class Tree:
         n1 = self.G.number_of_nodes()
         self.G.add_node(n1)
         self.G.nodes[n1]['problem'] = P1
-        self.G.nodes[n1]['label'] = f'{n1}: {problem_description(P1, False)}'
+        self.G.nodes[n1]['label'] = f'{n1} -> {problem_description(P1, False)}'
 
         self.G.add_edge(n1, v)
         self.G.edges[n1, v]['label'] = 'gomory'
